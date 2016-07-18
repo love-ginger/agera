@@ -15,9 +15,9 @@
  */
 package com.google.android.agera;
 
-import static com.google.android.agera.Common.WorkerHandler.MSG_CALL_ACKNOWLEDGE_CANCEL;
-import static com.google.android.agera.Common.WorkerHandler.MSG_CALL_MAYBE_START_FLOW;
-import static com.google.android.agera.Common.workerHandler;
+import static com.google.android.agera.WorkerHandler.MSG_CALL_ACKNOWLEDGE_CANCEL;
+import static com.google.android.agera.WorkerHandler.MSG_CALL_MAYBE_START_FLOW;
+import static com.google.android.agera.WorkerHandler.workerHandler;
 import static com.google.android.agera.Observables.compositeObservable;
 import static com.google.android.agera.Observables.perMillisecondObservable;
 import static com.google.android.agera.Preconditions.checkNotNull;
@@ -26,8 +26,6 @@ import static com.google.android.agera.RepositoryConfig.CANCEL_FLOW;
 import static com.google.android.agera.RepositoryConfig.RESET_TO_INITIAL_VALUE;
 import static com.google.android.agera.RepositoryConfig.SEND_INTERRUPT;
 import static java.lang.Thread.currentThread;
-
-import com.google.android.agera.Common.WorkerHandler;
 
 import android.support.annotation.IntDef;
 import android.support.annotation.NonNull;
@@ -51,10 +49,9 @@ final class CompiledRepository extends BaseObservable
       @NonNull final Merger<Object, Object, Boolean> notifyChecker,
       @RepositoryConfig final int concurrentUpdateConfig,
       @RepositoryConfig final int deactivationConfig) {
-    Observable eventSource = perMillisecondObservable(frequency,
-        compositeObservable(eventSources.toArray(new Observable[eventSources.size()])));
-    Object[] directiveArray = directives.toArray();
-    return new CompiledRepository(initialValue, eventSource,
+    final Object[] directiveArray = directives.toArray();
+    return new CompiledRepository(initialValue, compositeObservable(frequency,
+        eventSources.toArray(new Observable[eventSources.size()])),
         directiveArray, notifyChecker, deactivationConfig, concurrentUpdateConfig);
   }
 
@@ -158,7 +155,12 @@ final class CompiledRepository extends BaseObservable
         lastDirectiveIndex = -1; // this could be pointing at the goLazy directive
         restartNeeded = false;
       } else {
-        return; // flow already running, do not continue.
+        if (runState == CANCEL_REQUESTED) {
+          // flow may still be processing the previous deactivation;
+          // make sure to restart
+          restartNeeded = true;
+        }
+        return; // flow already running or scheduled to restart, do not continue
       }
     }
     intermediateValue = currentValue;
@@ -272,7 +274,7 @@ final class CompiledRepository extends BaseObservable
     final int length = directives.length;
     int i = index;
     while (0 <= i && i < length) {
-      int directiveType = (Integer) directives[i];
+      final int directiveType = (Integer) directives[i];
       if (asynchronously || directiveType == GO_TO || directiveType == GO_LAZY) {
         // Check cancellation before running the next directive. This needs to be done while locked.
         // For goTo and goLazy, because they need to change the states and suspend the flow, they
@@ -334,7 +336,7 @@ final class CompiledRepository extends BaseObservable
   }
 
   private int runGetFrom(@NonNull final Object[] directives, final int index) {
-    Supplier supplier = (Supplier) directives[index + 1];
+    final Supplier supplier = (Supplier) directives[index + 1];
     intermediateValue = checkNotNull(supplier.get());
     return index + 2;
   }
@@ -347,8 +349,8 @@ final class CompiledRepository extends BaseObservable
   }
 
   private int runMergeIn(@NonNull final Object[] directives, final int index) {
-    Supplier supplier = (Supplier) directives[index + 1];
-    Merger merger = (Merger) directives[index + 2];
+    final Supplier supplier = (Supplier) directives[index + 1];
+    final Merger merger = (Merger) directives[index + 2];
     intermediateValue = checkNotNull(merger.merge(intermediateValue, supplier.get()));
     return index + 3;
   }
@@ -360,7 +362,7 @@ final class CompiledRepository extends BaseObservable
   }
 
   private int runTransform(@NonNull final Object[] directives, final int index) {
-    Function function = (Function) directives[index + 1];
+    final Function function = (Function) directives[index + 1];
     intermediateValue = checkNotNull(function.apply(intermediateValue));
     return index + 2;
   }
@@ -376,11 +378,11 @@ final class CompiledRepository extends BaseObservable
   }
 
   private int runCheck(@NonNull final Object[] directives, final int index) {
-    Function caseFunction = (Function) directives[index + 1];
-    Predicate casePredicate = (Predicate) directives[index + 2];
-    Function terminatingValueFunction = (Function) directives[index + 3];
+    final Function caseFunction = (Function) directives[index + 1];
+    final Predicate casePredicate = (Predicate) directives[index + 2];
+    final Function terminatingValueFunction = (Function) directives[index + 3];
 
-    Object caseValue = caseFunction.apply(intermediateValue);
+    final Object caseValue = caseFunction.apply(intermediateValue);
     if (casePredicate.apply(caseValue)) {
       return index + 4;
     } else {
@@ -389,8 +391,7 @@ final class CompiledRepository extends BaseObservable
     }
   }
 
-  static void addGoTo(@NonNull final Executor executor,
-      @NonNull final List<Object> directives) {
+  static void addGoTo(@NonNull final Executor executor, @NonNull final List<Object> directives) {
     directives.add(GO_TO);
     directives.add(executor);
   }
@@ -415,8 +416,7 @@ final class CompiledRepository extends BaseObservable
     return index + 1;
   }
 
-  static void addSendTo(@NonNull final Receiver receiver,
-      @NonNull final List<Object> directives) {
+  static void addSendTo(@NonNull final Receiver receiver, @NonNull final List<Object> directives) {
     directives.add(SEND_TO);
     directives.add(receiver);
   }
@@ -435,8 +435,8 @@ final class CompiledRepository extends BaseObservable
   }
 
   private int runBindWith(@NonNull final Object[] directives, final int index) {
-    Supplier supplier = (Supplier) directives[index + 1];
-    Binder binder = (Binder) directives[index + 2];
+    final Supplier supplier = (Supplier) directives[index + 1];
+    final Binder binder = (Binder) directives[index + 2];
     binder.bind(intermediateValue, supplier.get());
     return index + 3;
   }
@@ -448,9 +448,8 @@ final class CompiledRepository extends BaseObservable
   }
 
   private int runFilterSuccess(@NonNull final Object[] directives, final int index) {
-    Function terminatingValueFunction = (Function) directives[index + 1];
-
-    Result tryValue = (Result) intermediateValue;
+    final Function terminatingValueFunction = (Function) directives[index + 1];
+    final Result tryValue = (Result) intermediateValue;
     if (tryValue.succeeded()) {
       intermediateValue = tryValue.get();
       return index + 2;
@@ -469,13 +468,13 @@ final class CompiledRepository extends BaseObservable
     }
   }
 
-  static void addEnd(boolean skip, @NonNull final List<Object> directives) {
+  static void addEnd(final boolean skip, @NonNull final List<Object> directives) {
     directives.add(END);
     directives.add(skip);
   }
 
   private int runEnd(@NonNull final Object[] directives, final int index) {
-    boolean skip = (Boolean) directives[index + 1];
+    final boolean skip = (Boolean) directives[index + 1];
     if (skip) {
       skipAndEndFlow();
     } else {
@@ -495,7 +494,7 @@ final class CompiledRepository extends BaseObservable
   }
 
   private synchronized void setNewValueAndEndFlow(@NonNull final Object newValue) {
-    boolean wasRunningLazily = runState == RUNNING_LAZILY;
+    final boolean wasRunningLazily = runState == RUNNING_LAZILY;
     runState = IDLE;
     intermediateValue = initialValue; // GC the intermediate value but field must be kept non-null.
     if (wasRunningLazily) {
@@ -507,7 +506,7 @@ final class CompiledRepository extends BaseObservable
   }
 
   private void setNewValueLocked(@NonNull final Object newValue) {
-    boolean shouldNotify = notifyChecker.merge(currentValue, newValue);
+    final boolean shouldNotify = notifyChecker.merge(currentValue, newValue);
     currentValue = newValue;
     if (shouldNotify) {
       dispatchUpdate();
@@ -522,8 +521,8 @@ final class CompiledRepository extends BaseObservable
   /** Called from the executor of a goTo instruction to continue processing. */
   @Override
   public void run() {
-    Thread myThread = currentThread();
-    int index;
+    final Thread myThread = currentThread();
+    final int index;
     synchronized (this) {
       index = lastDirectiveIndex;
       checkState(runState == PAUSED_AT_GO_TO || runState == CANCEL_REQUESTED,
@@ -564,7 +563,7 @@ final class CompiledRepository extends BaseObservable
   @Override
   public synchronized Object get() {
     if (runState == PAUSED_AT_GO_LAZY) {
-      int index = lastDirectiveIndex;
+      final int index = lastDirectiveIndex;
       runState = RUNNING_LAZILY;
       runFlowFrom(continueFromGoLazy(directives, index), false);
     }

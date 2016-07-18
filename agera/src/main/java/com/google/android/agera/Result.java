@@ -37,11 +37,20 @@ import android.support.annotation.Nullable;
  */
 public final class Result<T> {
   @NonNull
-  private static final Result<Object> FAILURE =
-      new Result<>(null, new Throwable("Attempt failed"));
+  private static final Result<Object> ABSENT;
   @NonNull
-  private static final Result<Object> ABSENT =
-      new Result<>(null, new NullPointerException("Value is absent"));
+  private static final Result<Object> FAILURE;
+  @NonNull
+  private static final Throwable ABSENT_THROWABLE;
+
+  static {
+    final Throwable failureThrowable = new Throwable("Attempt failed");
+    failureThrowable.setStackTrace(new StackTraceElement[0]);
+    FAILURE = new Result<>(null, failureThrowable);
+    ABSENT_THROWABLE = new NullPointerException("Value is absent");
+    ABSENT_THROWABLE.setStackTrace(new StackTraceElement[0]);
+    ABSENT = new Result<>(null, ABSENT_THROWABLE);
+  }
 
   @Nullable
   private final T value;
@@ -67,7 +76,8 @@ public final class Result<T> {
    */
   @NonNull
   public static <T> Result<T> failure(@NonNull final Throwable failure) {
-    return new Result<>(null, checkNotNull(failure));
+    return failure == ABSENT_THROWABLE
+        ? Result.<T>absent() : new Result<T>(null, checkNotNull(failure));
   }
 
   /**
@@ -207,6 +217,35 @@ public final class Result<T> {
     return this;
   }
 
+
+  /**
+   * Passes the encountered failure to the {@code receiver} if the failure is absent; otherwise
+   * does nothing.
+   *
+   * @return This instance, for chaining.
+   */
+  @NonNull
+  public Result<T> ifAbsentFailureSendTo(@NonNull final Receiver<? super Throwable> receiver) {
+    if (failure == ABSENT_THROWABLE) {
+      receiver.accept(failure);
+    }
+    return this;
+  }
+
+  /**
+   * Passes the encountered failure to the {@code receiver} if the attempt has failed, except for
+   * the failure absent; otherwise does nothing.
+   *
+   * @return This instance, for chaining.
+   */
+  @NonNull
+  public Result<T> ifNonAbsentFailureSendTo(@NonNull final Receiver<? super Throwable> receiver) {
+    if (failure != null && failure != ABSENT_THROWABLE) {
+      receiver.accept(failure);
+    }
+    return this;
+  }
+
   /**
    * Binds the output value with {@code bindValue} using {@code binder} if the attempt has
    * succeeded; otherwise does nothing.
@@ -223,6 +262,51 @@ public final class Result<T> {
   }
 
   /**
+   * Binds the output value with {@code bindValue} using {@code binder} if the attempt has failed;
+   * otherwise does nothing.
+   *
+   * @return This instance, for chaining.
+   */
+  @NonNull
+  public <U> Result<T> ifFailedBind(@NonNull final U bindValue,
+      @NonNull final Binder<Throwable, ? super U> binder) {
+    if (failure != null) {
+      binder.bind(failure, bindValue);
+    }
+    return this;
+  }
+
+  /**
+   * Binds the output value with {@code bindValue} using {@code binder} if the failure is absent;
+   * otherwise does nothing.
+   *
+   * @return This instance, for chaining.
+   */
+  @NonNull
+  public <U> Result<T> ifAbsentFailureBind(@NonNull final U bindValue,
+      @NonNull final Binder<Throwable, ? super U> binder) {
+    if (failure == ABSENT_THROWABLE) {
+      binder.bind(failure, bindValue);
+    }
+    return this;
+  }
+
+  /**
+   * Binds the output value with {@code bindValue} using {@code binder} if the attempt has failed,
+   * except for the failure absent; otherwise does nothing.
+   *
+   * @return This instance, for chaining.
+   */
+  @NonNull
+  public <U> Result<T> ifNonAbsentFailureBind(@NonNull final U bindValue,
+      @NonNull final Binder<Throwable, ? super U> binder) {
+    if (failure != null && failure != ABSENT_THROWABLE) {
+      binder.bind(failure, bindValue);
+    }
+    return this;
+  }
+
+  /**
    * Binds the output value with the value from the {@code supplier} using {@code binder} if the
    * attempt has succeeded; otherwise does nothing, not calling either the binder or the supplier.
    *
@@ -233,6 +317,51 @@ public final class Result<T> {
       @NonNull final Binder<? super T, ? super U> binder) {
     if (value != null) {
       binder.bind(value, supplier.get());
+    }
+    return this;
+  }
+
+  /**
+   * Binds the output value with the value from the {@code supplier} using {@code binder} if the
+   * attempt has failed; otherwise does nothing.
+   *
+   * @return This instance, for chaining.
+   */
+  @NonNull
+  public <U> Result<T> ifFailedBindFrom(@NonNull final Supplier<U> supplier,
+      @NonNull final Binder<Throwable, ? super U> binder) {
+    if (failure != null) {
+      binder.bind(failure, supplier.get());
+    }
+    return this;
+  }
+
+  /**
+   * Binds the output value with the value from the {@code supplier} using {@code binder} if the
+   * failure is absent; otherwise does nothing.
+   *
+   * @return This instance, for chaining.
+   */
+  @NonNull
+  public <U> Result<T> ifAbsentFailureBindFrom(@NonNull final Supplier<U> supplier,
+      @NonNull final Binder<Throwable, ? super U> binder) {
+    if (failure == ABSENT_THROWABLE) {
+      binder.bind(failure, supplier.get());
+    }
+    return this;
+  }
+
+  /**
+   * Binds the output value with the value from the {@code supplier} using {@code binder} if the
+   * attempt has failed, except for the failure absent; otherwise does nothing.
+   *
+   * @return This instance, for chaining.
+   */
+  @NonNull
+  public <U> Result<T> ifNonAbsentFailureBindFrom(@NonNull final Supplier<U> supplier,
+      @NonNull final Binder<Throwable, ? super U> binder) {
+    if (failure != null && failure != ABSENT_THROWABLE) {
+      binder.bind(failure, supplier.get());
     }
     return this;
   }
@@ -398,27 +527,23 @@ public final class Result<T> {
   }
 
   @Override
-  public boolean equals(Object o) {
-    if (this == o) {
-      return true;
-    }
-    if (!(o instanceof Result)) {
+  public boolean equals(final Object o) {
+    if (this == o) { return true; }
+    if (o == null || getClass() != o.getClass()) { return false; }
+
+    final Result<?> result = (Result<?>) o;
+
+    if (value != null ? !value.equals(result.value) : result.value != null) { return false; }
+    if (failure != null ? !failure.equals(result.failure) : result.failure != null) {
       return false;
     }
 
-    final Result<?> other = (Result<?>) o;
-
-    if (value != null) {
-      return value.equals(other.value);
-    } else {
-      //noinspection ConstantConditions -- value == null implies failure != null
-      return failure.equals(other.failure);
-    }
+    return true;
   }
 
   @Override
   public int hashCode() {
-    int result = (value != null ? value.hashCode() : 0);
+    int result = value != null ? value.hashCode() : 0;
     result = 31 * result + (failure != null ? failure.hashCode() : 0);
     return result;
   }

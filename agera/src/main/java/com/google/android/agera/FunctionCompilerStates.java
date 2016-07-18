@@ -17,6 +17,7 @@ package com.google.android.agera;
 
 import android.support.annotation.NonNull;
 
+import java.util.Comparator;
 import java.util.List;
 
 /**
@@ -87,11 +88,13 @@ public interface FunctionCompilerStates {
      */
     @NonNull
     <TTo> FList<TTo, List<TTo>, TFrom> map(@NonNull Function<TPrev, TTo> function);
+
     /**
      * Adds a {@link Function} to the end of the behavior chain to map each item into a new type.
      *
      * @param function the function to apply to each item to create a new list
      */
+    @NonNull
     <TTo> Function<TFrom, List<TTo>> thenMap(@NonNull Function<? super TPrev, TTo> function);
 
     /**
@@ -111,6 +114,14 @@ public interface FunctionCompilerStates {
     FList<TPrev, TPrevList, TFrom> limit(int limit);
 
     /**
+     * Adds a {@link Comparator} to the behavior chain to sort the items.
+     *
+     * @param comparator the comparator to sort the items
+     */
+    @NonNull
+    FList<TPrev, TPrevList, TFrom> sort(@NonNull Comparator<TPrev> comparator);
+
+    /**
      * Adds a {@link Predicate} to the end of the behavior chain to filter out items.
      *
      * @param filter the predicate to filter by
@@ -125,5 +136,13 @@ public interface FunctionCompilerStates {
      */
     @NonNull
     Function<TFrom, TPrevList> thenLimit(int limit);
+
+    /**
+     * Adds a {@link Comparator} to the behavior chain to sort the items.
+     *
+     * @param comparator the comparator to sort the items
+     */
+    @NonNull
+    Function<TFrom, TPrevList> thenSort(@NonNull Comparator<TPrev> comparator);
   }
 }

@@ -30,9 +30,9 @@ public final class MockUpdatable implements Updatable {
 
   private boolean updated = false;
 
-  private MockUpdatable() {
-  }
+  private MockUpdatable() {}
 
+  @NonNull
   public static MockUpdatable mockUpdatable() {
     return new MockUpdatable();
   }
@@ -63,6 +63,5 @@ public final class MockUpdatable implements Updatable {
       observable.removeUpdatable(this);
     }
     observables.clear();
-    runUiThreadTasksIncludingDelayedTasks();
   }
 }

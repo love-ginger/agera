@@ -21,7 +21,6 @@ import static com.google.android.agera.net.HttpRequests.httpDeleteRequest;
 import static com.google.android.agera.net.HttpRequests.httpGetRequest;
 import static com.google.android.agera.net.HttpRequests.httpPostRequest;
 import static com.google.android.agera.net.HttpRequests.httpPutRequest;
-import static com.google.android.agera.net.test.matchers.HasHashCodeOf.hasHashCodeOf;
 import static com.google.android.agera.net.test.matchers.HasPrivateConstructor.hasPrivateConstructor;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.hasEntry;
@@ -29,17 +28,16 @@ import static org.hamcrest.Matchers.hasToString;
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.isEmptyOrNullString;
 import static org.hamcrest.Matchers.not;
-import static org.robolectric.annotation.Config.NONE;
 
+import com.google.android.agera.net.HttpRequestCompilerStates.HTBodyHeaderFieldRedirectsCachesConnectionTimeoutReadTimeoutCompile;
+import com.google.android.agera.net.HttpRequestCompilerStates.HTHeaderFieldRedirectsCachesConnectionTimeoutReadTimeoutCompile;
+
+import dalvik.annotation.TestTarget;
+import nl.jqno.equalsverifier.EqualsVerifier;
 import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.robolectric.RobolectricTestRunner;
-import org.robolectric.annotation.Config;
 
 import java.util.Map;
 
-@Config(manifest = NONE)
-@RunWith(RobolectricTestRunner.class)
 public final class HttpRequestTest {
   private static final String URL = "http://agera";
   private static final byte[] DATA = "Body data".getBytes();
@@ -136,20 +134,77 @@ public final class HttpRequestTest {
     assertThat(httpDeleteRequest(URL).connectTimeoutMs(3).compile().connectTimeoutMs, is(3));
   }
 
+  @Test(expected = IllegalStateException.class)
+  public void shouldThrowExceptionForReuseOfCompilerOfNoRedirects() {
+    final HTHeaderFieldRedirectsCachesConnectionTimeoutReadTimeoutCompile incompleteRequest =
+        httpGetRequest(URL);
+    incompleteRequest.compile();
+
+    incompleteRequest.noRedirects();
+  }
+
+  @Test(expected = IllegalStateException.class)
+  public void shouldThrowExceptionForReuseOfCompilerOfNoCaches() {
+    final HTHeaderFieldRedirectsCachesConnectionTimeoutReadTimeoutCompile incompleteRequest =
+        httpGetRequest(URL);
+    incompleteRequest.compile();
+
+    incompleteRequest.noCaches();
+  }
+
+  @Test(expected = IllegalStateException.class)
+  public void shouldThrowExceptionForReuseOfCompilerOfConnectTimeoutMs() {
+    final HTHeaderFieldRedirectsCachesConnectionTimeoutReadTimeoutCompile incompleteRequest =
+        httpGetRequest(URL);
+    incompleteRequest.compile();
+
+    incompleteRequest.connectTimeoutMs(1);
+  }
+
+  @Test(expected = IllegalStateException.class)
+  public void shouldThrowExceptionForReuseOfCompilerOfReadTimeoutMs() {
+    final HTHeaderFieldRedirectsCachesConnectionTimeoutReadTimeoutCompile incompleteRequest =
+        httpGetRequest(URL);
+    incompleteRequest.compile();
+
+    incompleteRequest.readTimeoutMs(1);
+  }
+
+  @Test(expected = IllegalStateException.class)
+  public void shouldThrowExceptionForReuseOfCompilerOfCompile() {
+    final HTHeaderFieldRedirectsCachesConnectionTimeoutReadTimeoutCompile incompleteRequest =
+        httpGetRequest(URL);
+    incompleteRequest.compile();
+
+    incompleteRequest.compile();
+  }
+
+  @Test(expected = IllegalStateException.class)
+  public void shouldThrowExceptionForReuseOfCompilerOfHeaderField() {
+    final HTHeaderFieldRedirectsCachesConnectionTimeoutReadTimeoutCompile incompleteRequest =
+        httpGetRequest(URL);
+    incompleteRequest.compile();
+
+    incompleteRequest.headerField("", "");
+  }
+
+  @Test(expected = IllegalStateException.class)
+  public void shouldThrowExceptionForReuseOfCompilerOfBody() {
+    final HTBodyHeaderFieldRedirectsCachesConnectionTimeoutReadTimeoutCompile incompleteRequest =
+        httpPostRequest(URL);
+    incompleteRequest.compile();
+
+    incompleteRequest.body(new byte[]{});
+  }
+
   @Test
-  public void shouldBeEqualForSameData() {
-    assertThat(httpGetRequest(URL).compile(), is(httpGetRequest(URL).compile()));
+  public void shouldVerifyEquals() {
+    EqualsVerifier.forClass(HttpRequest.class).verify();
   }
 
   @Test
   public void shouldHaveToString() {
     assertThat(httpGetRequest(URL).compile(), hasToString(not(isEmptyOrNullString())));
-  }
-
-  @Test
-  public void shouldHaveSameHashcodeForSameData() {
-    assertThat(httpGetRequest(URL).compile(),
-        hasHashCodeOf(httpGetRequest(URL).compile()));
   }
 
   @Test

@@ -39,14 +39,22 @@ public final class UpdatableUpdated extends TypeSafeMatcher<MockUpdatable> {
 
   @Override
   public void describeTo(final Description description) {
-    description.appendText(updated ? "was updated" : "not updated");
+    description.appendText(updated ? "was updated" : "was not updated");
   }
 
+  @Override
+  protected void describeMismatchSafely(final MockUpdatable item,
+      final Description mismatchDescription) {
+    mismatchDescription.appendText(updated ? "was not updated" : "was updated");
+  }
+
+  @NonNull
   @Factory
   public static UpdatableUpdated wasUpdated() {
     return WAS_UPDATED;
   }
 
+  @NonNull
   @Factory
   public static UpdatableUpdated wasNotUpdated() {
     return WAS_NOT_UPDATED;

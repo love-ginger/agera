@@ -13,7 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package com.google.android.agera.test.matchers;
+package com.google.android.agera.rvadapter.test.matchers;
 
 import android.support.annotation.NonNull;
 import org.hamcrest.Description;
@@ -21,27 +21,34 @@ import org.hamcrest.Factory;
 import org.hamcrest.Matcher;
 import org.hamcrest.TypeSafeMatcher;
 
-public final class HasHashCodeOf extends TypeSafeMatcher<Object> {
-  @NonNull
-  private final Object object;
+import java.lang.reflect.Constructor;
+import java.lang.reflect.Modifier;
 
-  private HasHashCodeOf(@NonNull final Object object) {
-    this.object = object;
-  }
+public final class HasPrivateConstructor extends TypeSafeMatcher<Class<?>> {
+  private static final HasPrivateConstructor INSTANCE = new HasPrivateConstructor();
+
+  private HasPrivateConstructor() {}
 
   @Override
-  protected boolean matchesSafely(@NonNull final Object item) {
-    return item.hashCode() == object.hashCode();
+  protected boolean matchesSafely(final Class<?> clazz) {
+    try {
+      Constructor<?> constructor = clazz.getDeclaredConstructor();
+      constructor.setAccessible(true);
+      constructor.newInstance();
+      return Modifier.isPrivate(constructor.getModifiers());
+    } catch (final Exception ignored) {
+    }
+    return false;
   }
 
   @Override
   public void describeTo(final Description description) {
-    description.appendText("same hashcode as ");
-    description.appendValue(object);
+    description.appendText("should have private constructor");
   }
 
+  @NonNull
   @Factory
-  public static Matcher<Object> hasHashCodeOf(@NonNull final Object object) {
-    return new HasHashCodeOf(object);
+  public static Matcher<Class<?>> hasPrivateConstructor() {
+    return INSTANCE;
   }
 }

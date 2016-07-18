@@ -30,26 +30,23 @@ import static org.hamcrest.Matchers.contains;
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.sameInstance;
 import static org.mockito.Matchers.anyInt;
+import static org.mockito.Matchers.anyString;
 import static org.mockito.Matchers.eq;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 import static org.mockito.MockitoAnnotations.initMocks;
-import static org.robolectric.annotation.Config.NONE;
 
 import android.support.annotation.NonNull;
 import org.hamcrest.Matchers;
 import org.junit.Before;
 import org.junit.Test;
-import org.junit.runner.RunWith;
 import org.mockito.Mock;
-import org.robolectric.RobolectricTestRunner;
-import org.robolectric.annotation.Config;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.List;
 
-@Config(manifest = NONE)
-@RunWith(RobolectricTestRunner.class)
 public final class FunctionsTest {
   private static final int VALUE_PLUS_TWO = 44;
   private static final int RECOVER_VALUE = 43;
@@ -178,6 +175,36 @@ public final class FunctionsTest {
   }
 
   @Test
+  public void shouldCreateFunctionFromListToSortedList() {
+    final Function<List<String>, List<Integer>> function = functionFromListOf(String.class)
+            .map(new StringLength())
+            .thenSort(new Comparator<Integer>() {
+              @Override
+              public int compare(Integer lhs, Integer rhs) {
+                return lhs.compareTo(rhs);
+              }
+            });
+
+    final List<String> inputList = new ArrayList<>(INPUT_LIST);
+    assertThat(function.apply(inputList), contains(3, 4, 7, 7));
+  }
+
+  @Test
+  public void shouldNotMutateInputListWhenSorting() {
+    final Function<List<String>, List<String>> function = functionFromListOf(String.class)
+        .thenSort(new Comparator<String>() {
+          @Override
+          public int compare(String lhs, String rhs) {
+            return lhs.compareTo(rhs);
+          }
+        });
+
+    final List<String> inputList = new ArrayList<>(INPUT_LIST);
+    assertThat(function.apply(inputList), contains("for", "some", "strings", "testing"));
+    assertThat(inputList, is(INPUT_LIST));
+  }
+
+  @Test
   public void shouldCreateFunctionFromListToListWithZeroLimit() {
     final Function<List<String>, List<Integer>> function = functionFromListOf(String.class)
         .limit(0)
@@ -193,6 +220,28 @@ public final class FunctionsTest {
         .thenMap(new StringLength());
 
     assertThat(function.apply(INPUT_LIST), contains(4, 7, 3, 7));
+  }
+
+  @Test
+  public void shouldReturnEmptyListForFilterOfEmptyList() {
+    final Predicate<String> predicate = mock(Predicate.class);
+    when(predicate.apply(anyString())).thenReturn(true);
+
+    final Function<List<String>, List<String>> function = functionFromListOf(String.class)
+        .thenFilter(predicate);
+
+    assertThat(function.apply(new ArrayList<String>()),
+        sameInstance(Collections.<String>emptyList()));
+  }
+
+  @Test
+  public void shouldReturnIdentityFunctionIfNoFunctionsAddedToCompiler() {
+    final Function<List<String>, List<String>> function = functionFromListOf(String.class)
+        .map(Functions.<String>identityFunction())
+        .filter(Predicates.<String>truePredicate())
+        .thenApply(Functions.<List<String>>identityFunction());
+
+    assertThat(function, sameInstance(Functions.<List<String>>identityFunction()));
   }
 
   private static final class DoubleString implements Function<String, String> {

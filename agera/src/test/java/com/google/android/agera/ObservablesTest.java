@@ -23,30 +23,36 @@ import static com.google.android.agera.Observables.conditionalObservable;
 import static com.google.android.agera.Observables.perLoopObservable;
 import static com.google.android.agera.Observables.perMillisecondObservable;
 import static com.google.android.agera.Observables.updateDispatcher;
+import static com.google.android.agera.Repositories.repositoryWithInitialValue;
+import static com.google.android.agera.WorkerHandler.workerHandler;
 import static com.google.android.agera.test.matchers.HasPrivateConstructor.hasPrivateConstructor;
 import static com.google.android.agera.test.matchers.UpdatableUpdated.wasUpdated;
 import static com.google.android.agera.test.mocks.MockUpdatable.mockUpdatable;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.greaterThanOrEqualTo;
+import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.not;
 import static org.hamcrest.Matchers.notNullValue;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 import static org.mockito.MockitoAnnotations.initMocks;
 import static org.robolectric.annotation.Config.NONE;
 import static org.robolectric.internal.ShadowExtractor.extract;
+import static org.robolectric.shadows.ShadowLooper.getShadowMainLooper;
 import static org.robolectric.shadows.ShadowLooper.idleMainLooper;
+import static org.robolectric.shadows.ShadowLooper.runUiThreadTasksIncludingDelayedTasks;
 
 import com.google.android.agera.test.mocks.MockUpdatable;
 
-import android.app.Application;
-import android.content.Intent;
+import android.support.annotation.NonNull;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.mockito.Mock;
 import org.robolectric.RobolectricTestRunner;
-import org.robolectric.RuntimeEnvironment;
 import org.robolectric.annotation.Config;
 import org.robolectric.shadows.ShadowLooper;
 import org.robolectric.util.Scheduler;
@@ -54,6 +60,7 @@ import org.robolectric.util.Scheduler;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 @Config(manifest = NONE)
 @RunWith(RobolectricTestRunner.class)
@@ -63,6 +70,7 @@ public final class ObservablesTest {
   private Observable compositeObservableOfMany;
   private Observable chainedCompositeObservableOfOne;
   private Observable chainedCompositeObservable;
+  private Observable chainedDupeCompositeObservable;
   private UpdateDispatcher firstUpdateDispatcher;
   private UpdateDispatcher secondUpdateDispatcher;
   private UpdateDispatcher thirdUpdateDispatcher;
@@ -75,6 +83,7 @@ public final class ObservablesTest {
   @Mock
   private ActivationHandler mockActivationHandler;
   private UpdateDispatcher updateDispatcherWithUpdatablesChanged;
+  private ShadowLooper looper;
 
   @Before
   public void setUp() {
@@ -94,8 +103,12 @@ public final class ObservablesTest {
         compositeObservable(firstUpdateDispatcher));
     chainedCompositeObservable = compositeObservable(compositeObservable(firstUpdateDispatcher,
         secondUpdateDispatcher), thirdUpdateDispatcher);
+    chainedDupeCompositeObservable = compositeObservable(firstUpdateDispatcher,
+        compositeObservable(firstUpdateDispatcher, secondUpdateDispatcher),
+        secondUpdateDispatcher, thirdUpdateDispatcher);
     updatable = mockUpdatable();
     secondUpdatable = mockUpdatable();
+    looper = getShadowMainLooper();
   }
 
   @After
@@ -150,6 +163,18 @@ public final class ObservablesTest {
   }
 
   @Test
+  public void shouldUpdateOnlyOnceFromDupeInChainedComposite() {
+    final Updatable updatable = mock(Updatable.class);
+    chainedDupeCompositeObservable.addUpdatable(updatable);
+    runUiThreadTasksIncludingDelayedTasks();
+
+    thirdUpdateDispatcher.update();
+    runUiThreadTasksIncludingDelayedTasks();
+
+    verify(updatable).update();
+  }
+
+  @Test
   public void shouldNotUpdateConditionalObservableForFalseCondition() {
     updatable.addToObservable(trueConditionalObservable);
 
@@ -200,9 +225,60 @@ public final class ObservablesTest {
     secondUpdatable.addToObservable(updateDispatcherWithUpdatablesChanged);
 
     updatable.removeFromObservables();
+    looper.runToEndOfTasks();
     secondUpdatable.removeFromObservables();
+    looper.runToEndOfTasks();
 
     verify(mockActivationHandler).observableActivated(updateDispatcherWithUpdatablesChanged);
+  }
+
+  @Test
+  public void shouldNotRefreshObservableIfReactivatedWithinSameCycle() {
+    final Supplier supplier = mock(Supplier.class);
+    when(supplier.get()).thenReturn(new Object());
+    final Repository repository = repositoryWithInitialValue(new Object())
+        .observe()
+        .onUpdatesPerLoop()
+        .thenGetFrom(supplier)
+        .compile();
+    updatable.addToObservable(repository);
+
+    looper.pause();
+    updatable.removeFromObservables();
+    updatable.addToObservable(repository);
+    looper.unPause();
+
+    verify(supplier).get();
+  }
+
+  @Test(expected = NullPointerException.class)
+  public void shouldThrowNullPointerExceptionForAddNullUpdatable() {
+    updateDispatcher.addUpdatable(null);
+  }
+
+  @Test(expected = NullPointerException.class)
+  public void shouldThrowNullPointerExceptionForRemoveNullUpdatable() {
+    updateDispatcher.removeUpdatable(null);
+  }
+
+  @Test
+  public void shouldOnlyUpdateOncePerLooper() {
+    final Supplier supplier = mock(Supplier.class);
+    when(supplier.get()).thenReturn(new Object());
+    final Repository repository = repositoryWithInitialValue(new Object())
+        .observe(updateDispatcher)
+        .onUpdatesPerLoop()
+        .thenGetFrom(supplier)
+        .compile();
+    updatable.addToObservable(repository);
+
+    looper.pause();
+    updateDispatcher.update();
+    updateDispatcher.update();
+    updateDispatcher.update();
+    looper.unPause();
+
+    verify(supplier, times(2)).get();
   }
 
   @Test
@@ -261,8 +337,58 @@ public final class ObservablesTest {
       Collections.shuffle(mockUpdatables);
       for (MockUpdatable mockUpdatable : mockUpdatables) {
         mockUpdatable.removeFromObservables();
+        looper.runToEndOfTasks();
       }
     }
+  }
+
+  @Test
+  public void shouldIgnoreUnknownMessage() {
+    workerHandler().obtainMessage(-1).sendToTarget();
+  }
+
+  @Test
+  public void shouldNotAllowAddingUpdatablesOnNonLooperThreadInBaseObservable() {
+    final Observable observable = new BaseObservable() {};
+
+    assertThat(throwsIllegalStateExceptionForCallOnNonLooperThread(new Runnable() {
+      @Override
+      public void run() {
+        updatable.addToObservable(observable);
+      }
+    }), is(true));
+  }
+
+  @Test
+  public void shouldNotAllowCreatingBaseObservableOnNonLooperThread() {
+
+    assertThat(throwsIllegalStateExceptionForCallOnNonLooperThread(new Runnable() {
+      @Override
+      public void run() {
+        new BaseObservable() {};
+      }
+    }), is(true));
+  }
+
+  @Test
+  public void shouldNotAllowRemovingUpdatablesOnNonLooperThreadInBaseObservable() {
+    final Observable observable = new BaseObservable() {};
+    updatable.addToObservable(observable);
+
+    assertThat(throwsIllegalStateExceptionForCallOnNonLooperThread(new Runnable() {
+      @Override
+      public void run() {
+        updatable.removeFromObservables();
+      }
+    }), is(true));
+  }
+
+  @Test
+  public void shouldHandleLifeCycleInBaseObservable() {
+    final Observable observable = new BaseObservable() {};
+
+    updatable.addToObservable(observable);
+    updatable.removeFromObservables();
   }
 
   @Test
@@ -270,11 +396,24 @@ public final class ObservablesTest {
     assertThat(Observables.class, hasPrivateConstructor());
   }
 
-  private void sendBroadcast(final Intent intent) {
-    getApplication().sendBroadcast(intent);
-  }
-
-  private static Application getApplication() {
-    return RuntimeEnvironment.application;
+  private boolean throwsIllegalStateExceptionForCallOnNonLooperThread(
+      @NonNull final Runnable runnable) {
+    final AtomicBoolean gotException = new AtomicBoolean(false);
+    final Thread thread = new Thread(new Runnable() {
+      @Override
+      public void run() {
+        try {
+          runnable.run();
+        } catch (IllegalStateException e) {
+          gotException.set(true);
+        }
+      }
+    });
+    thread.start();
+    try {
+      thread.join();
+    } catch (InterruptedException ignored) {
+    }
+    return gotException.get();
   }
 }

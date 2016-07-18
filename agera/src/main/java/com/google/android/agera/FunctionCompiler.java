@@ -20,13 +20,18 @@ import static com.google.android.agera.Common.TRUE_CONDICATE;
 import static com.google.android.agera.Preconditions.checkNotNull;
 import static java.util.Collections.emptyList;
 
+import com.google.android.agera.FunctionCompilerStates.FItem;
+import com.google.android.agera.FunctionCompilerStates.FList;
+
 import android.support.annotation.NonNull;
 
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Comparator;
 import java.util.List;
 
-@SuppressWarnings("unchecked")
-final class FunctionCompiler implements FunctionCompilerStates.FList, FunctionCompilerStates.FItem {
+@SuppressWarnings({"unchecked, rawtypes"})
+final class FunctionCompiler implements FList, FItem {
   @NonNull
   private final List<Function> functions;
 
@@ -49,33 +54,36 @@ final class FunctionCompiler implements FunctionCompilerStates.FList, FunctionCo
 
   @NonNull
   private Function createFunction() {
+    if (functions.isEmpty()) {
+      return IDENTITY_FUNCTION;
+    }
     return new ChainFunction(functions.toArray(new Function[functions.size()]));
   }
 
   @NonNull
   @Override
-  public FunctionCompilerStates.FList unpack(@NonNull final Function function) {
+  public FList unpack(@NonNull final Function function) {
     addFunction(function);
     return this;
   }
 
   @NonNull
   @Override
-  public FunctionCompilerStates.FItem apply(@NonNull final Function function) {
+  public FItem apply(@NonNull final Function function) {
     addFunction(function);
     return this;
   }
 
   @NonNull
   @Override
-  public FunctionCompilerStates.FList morph(@NonNull Function function) {
+  public FList morph(@NonNull Function function) {
     addFunction(function);
     return this;
   }
 
   @NonNull
   @Override
-  public FunctionCompilerStates.FList filter(@NonNull final Predicate filter) {
+  public FList filter(@NonNull final Predicate filter) {
     if (filter != TRUE_CONDICATE) {
       addFunction(new FilterFunction(filter));
     }
@@ -84,20 +92,28 @@ final class FunctionCompiler implements FunctionCompilerStates.FList, FunctionCo
 
   @NonNull
   @Override
-  public FunctionCompilerStates.FList limit(final int limit) {
+  public FList limit(final int limit) {
     addFunction(new LimitFunction(limit));
     return this;
   }
 
   @NonNull
   @Override
-  public FunctionCompilerStates.FList map(@NonNull final Function function) {
+  public FList sort(@NonNull final Comparator comparator) {
+    addFunction(new SortFunction(comparator));
+    return this;
+  }
+
+  @NonNull
+  @Override
+  public FList map(@NonNull final Function function) {
     if (function != IDENTITY_FUNCTION) {
       addFunction(new MapFunction(function));
     }
     return this;
   }
 
+  @NonNull
   @Override
   public Function thenMap(@NonNull final Function function) {
     map(function);
@@ -115,6 +131,13 @@ final class FunctionCompiler implements FunctionCompilerStates.FList, FunctionCo
   @Override
   public Function thenLimit(final int limit) {
     limit(limit);
+    return createFunction();
+  }
+
+  @NonNull
+  @Override
+  public Function thenSort(@NonNull final Comparator comparator) {
+    sort(comparator);
     return createFunction();
   }
 
@@ -203,6 +226,23 @@ final class FunctionCompiler implements FunctionCompilerStates.FList, FunctionCo
         }
       }
       return result;
+    }
+  }
+
+  private static final class SortFunction<T> implements Function<List<T>, List<T>> {
+    @NonNull
+    private final Comparator comparator;
+
+    SortFunction(@NonNull final Comparator comparator) {
+      this.comparator = checkNotNull(comparator);
+    }
+
+    @NonNull
+    @Override
+    public List<T> apply(@NonNull final List<T> input) {
+      final List<T> output = new ArrayList<>(input);
+      Collections.sort(output, comparator);
+      return output;
     }
   }
 }
